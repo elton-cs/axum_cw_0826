@@ -18,7 +18,9 @@ async fn main() -> Result<(), std::io::Error> {
     let mut game = Game::default();
     update_game(&mut game, GameCmd::ServerPopulateTiles { x: 9, y: 9 }).unwrap();
 
-    let listener = TcpListener::bind("0.0.0.0:3000").await?;
+    let address = "127.0.0.1:3000";
+    let listener = TcpListener::bind(address).await?;
+    println!("Server running at http://{address}");
     axum::serve(listener, router(Arc::new(Mutex::new(game)))).await
 }
 
