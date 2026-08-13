@@ -1,3 +1,4 @@
+use serde::Serialize;
 use std::collections::HashMap;
 
 pub const PUZZLE_PRICE: u32 = 10;
@@ -29,7 +30,8 @@ pub struct Game {
     pub is_frag_time: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "error", content = "details")]
 pub enum GameError {
     PlayerAlreadyExists,
     PlayerNotFound {
