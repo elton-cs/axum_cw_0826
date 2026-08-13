@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+pub const GAME_PUZZLE_PRICE: u32 = 10;
+
 const PUZZLE_WORDS: [&str; 20] = [
     "apple", "beach", "chair", "dance", "eagle", "flame", "grape", "house", "index", "jelly",
     "knife", "lemon", "mouse", "night", "ocean", "plant", "queen", "river", "stone", "tiger",
@@ -24,6 +26,9 @@ pub enum GameError {
     InvalidGuessLength {
         expected: usize,
         actual: usize,
+    },
+    InvalidLetter {
+        letter: char,
     },
     PuzzleAttemptNotRecorded,
     TilesAlreadyPopulated,
@@ -99,6 +104,14 @@ pub enum GameCmd {
     },
 }
 
+fn letter_idx(letter: char) -> Result<usize, GameError> {
+    if letter.is_ascii_lowercase() {
+        Ok((letter as u8 - b'a') as usize)
+    } else {
+        Err(GameError::InvalidLetter { letter })
+    }
+}
+
 pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> {
     match game_cmd {
         GameCmd::PopulateTiles { x, y } => {
@@ -151,7 +164,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             Ok(())
         }
         GameCmd::GiftFreeGems { user_idx, gem_gift } => {
-            if !user_idx < game.user.len() {
+            if user_idx >= game.user.len() {
                 return Err(GameError::PlayerNotFound { user_idx });
             } else if game.user[user_idx].gem != 0 {
                 return Err(GameError::PlayerAlreadyHasGems);
@@ -161,9 +174,9 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             Ok(())
         }
         GameCmd::BuyPuzzle { user_idx } => {
-            if !user_idx < game.user.len() {
+            if user_idx >= game.user.len() {
                 return Err(GameError::PlayerNotFound { user_idx });
-            } else if game.user[user_idx].gem == 0 {
+            } else if game.user[user_idx].gem < GAME_PUZZLE_PRICE {
                 return Err(GameError::InsufficientGems);
             } else if game.user[user_idx].curr_puzzle.is_some() {
                 return Err(GameError::PuzzleAlreadyActive);
@@ -184,6 +197,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             });
 
             let user = &mut game.user[user_idx];
+            user.gem -= GAME_PUZZLE_PRICE;
             user.curr_puzzle = puzzle;
 
             Ok(())
@@ -192,7 +206,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             user_idx,
             guess_word,
         } => {
-            if !user_idx < game.user.len() {
+            if user_idx >= game.user.len() {
                 return Err(GameError::PlayerNotFound { user_idx });
             }
 
@@ -265,7 +279,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             y,
             frag,
         } => {
-            if !user_idx < game.user.len() {
+            if user_idx >= game.user.len() {
                 return Err(GameError::PlayerNotFound { user_idx });
             }
             let Some(row) = game.tile.get_mut(x) else {
@@ -279,13 +293,14 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                 return Err(GameError::FragmentAlreadyPlaced);
             }
 
+            let frag_idx = letter_idx(frag)?;
             let user = &mut game.user[user_idx];
-            let frag_idx = frag as usize - 'a' as usize;
 
             if user.frag_count[frag_idx] < 1 {
                 return Err(GameError::FragmentNotOwned { fragment: frag });
             }
 
+            user.frag_count[frag_idx] -= 1;
             user.gem += tile.frag_gem;
             user.exp += tile.frag_exp;
             tile.frag_exp = 0;
@@ -296,12 +311,12 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             Ok(())
         }
         GameCmd::CraftSingleRune { user_idx, frag } => {
-            if !user_idx < game.user.len() {
+            if user_idx >= game.user.len() {
                 return Err(GameError::PlayerNotFound { user_idx });
             }
 
+            let frag_idx = letter_idx(frag)?;
             let user = &mut game.user[user_idx];
-            let frag_idx = frag as usize - 'a' as usize;
 
             if user.frag_count[frag_idx] < 3 {
                 return Err(GameError::InsufficientFragments {
@@ -318,13 +333,13 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             Ok(())
         }
         GameCmd::CraftRandomRune { user_idx, frags } => {
-            if !user_idx < game.user.len() {
+            if user_idx >= game.user.len() {
                 return Err(GameError::PlayerNotFound { user_idx });
             }
 
             let mut required_frags = [0_u32; 26];
             for frag in frags {
-                let frag_idx = frag as usize - 'a' as usize;
+                let frag_idx = letter_idx(frag)?;
                 required_frags[frag_idx] += 1;
             }
 
@@ -355,7 +370,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             y,
             rune,
         } => {
-            if !user_idx < game.user.len() {
+            if user_idx >= game.user.len() {
                 return Err(GameError::PlayerNotFound { user_idx });
             }
             let Some(row) = game.tile.get_mut(x) else {
@@ -369,8 +384,8 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                 return Err(GameError::RuneAlreadyPlaced);
             }
 
+            let rune_idx = letter_idx(rune)?;
             let user = &mut game.user[user_idx];
-            let rune_idx = rune as usize - 'a' as usize;
 
             if user.rune_count[rune_idx] < 1 {
                 return Err(GameError::RuneNotOwned { rune });
@@ -385,6 +400,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                 None => return Err(GameError::FragmentRequiredBeforeRune),
             }
 
+            user.rune_count[rune_idx] -= 1;
             user.gem += tile.rune_gem;
             user.exp += tile.rune_exp;
             tile.rune_exp = 0;
