@@ -37,61 +37,90 @@ pub fn router(state: GameState) -> Router {
 
 pub type GameState = Arc<Mutex<Game>>;
 type HandlerResult = Result<StatusCode, (StatusCode, Json<GameError>)>;
+type AuthResult = Result<usize, (StatusCode, Json<GameError>)>;
 
 #[derive(Deserialize)]
 struct CreatePlayerRequest {
     name: String,
     pass: String,
 }
+
 #[derive(Deserialize)]
 struct ClaimFreeGemsRequest {
-    user_idx: usize,
+    name: String,
+    pass: String,
     gem_gift: u32,
 }
+
 #[derive(Deserialize)]
-struct UserRequest {
-    user_idx: usize,
+struct BuyPuzzleRequest {
+    name: String,
+    pass: String,
 }
+
 #[derive(Deserialize)]
 struct GuessPuzzleRequest {
-    user_idx: usize,
+    name: String,
+    pass: String,
     guess_word: String,
 }
+
 #[derive(Deserialize)]
-struct FragmentRequest {
-    user_idx: usize,
+struct SingleRuneRequest {
+    name: String,
+    pass: String,
     frag: char,
 }
+
 #[derive(Deserialize)]
 struct RandomRuneRequest {
-    user_idx: usize,
+    name: String,
+    pass: String,
     frags: [char; 5],
 }
+
 #[derive(Deserialize)]
-struct PlaceFragmentRequest {
-    user_idx: usize,
-    user_name: String,
+struct PlaceFragRequest {
+    name: String,
+    pass: String,
     x: usize,
     y: usize,
     frag: char,
 }
+
 #[derive(Deserialize)]
 struct PlaceRuneRequest {
-    user_idx: usize,
-    user_name: String,
+    name: String,
+    pass: String,
     x: usize,
     y: usize,
     rune: char,
 }
 
+fn authenticate(state: &GameState, name: &str, pass: &str) -> AuthResult {
+    let game = state.lock().expect("game state lock poisoned");
+    let Some((user_idx, stored_pass)) = game.user_map.get(name) else {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(GameError::InvalidCredentials),
+        ));
+    };
+    if stored_pass != pass {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(GameError::InvalidCredentials),
+        ));
+    }
+    Ok(*user_idx)
+}
+
 fn run(state: &GameState, command: GameCmd) -> HandlerResult {
-    let result = update_game(
+    update_game(
         &mut state.lock().expect("game state lock poisoned"),
         command,
-    );
-    result
-        .map(|_| StatusCode::OK)
-        .map_err(|error| (StatusCode::BAD_REQUEST, Json(error)))
+    )
+    .map(|_| StatusCode::OK)
+    .map_err(|error| (StatusCode::BAD_REQUEST, Json(error)))
 }
 
 async fn create_player(
@@ -111,10 +140,11 @@ async fn claim_free_gems(
     State(state): State<GameState>,
     Json(request): Json<ClaimFreeGemsRequest>,
 ) -> HandlerResult {
+    let user_idx = authenticate(&state, &request.name, &request.pass)?;
     run(
         &state,
         GameCmd::ClaimFreeGems {
-            user_idx: request.user_idx,
+            user_idx,
             gem_gift: request.gem_gift,
         },
     )
@@ -122,24 +152,21 @@ async fn claim_free_gems(
 
 async fn buy_puzzle(
     State(state): State<GameState>,
-    Json(request): Json<UserRequest>,
+    Json(request): Json<BuyPuzzleRequest>,
 ) -> HandlerResult {
-    run(
-        &state,
-        GameCmd::BuyPuzzle {
-            user_idx: request.user_idx,
-        },
-    )
+    let user_idx = authenticate(&state, &request.name, &request.pass)?;
+    run(&state, GameCmd::BuyPuzzle { user_idx })
 }
 
 async fn guess_puzzle(
     State(state): State<GameState>,
     Json(request): Json<GuessPuzzleRequest>,
 ) -> HandlerResult {
+    let user_idx = authenticate(&state, &request.name, &request.pass)?;
     run(
         &state,
         GameCmd::GuessPuzzle {
-            user_idx: request.user_idx,
+            user_idx,
             guess_word: request.guess_word,
         },
     )
@@ -147,12 +174,13 @@ async fn guess_puzzle(
 
 async fn craft_single_rune(
     State(state): State<GameState>,
-    Json(request): Json<FragmentRequest>,
+    Json(request): Json<SingleRuneRequest>,
 ) -> HandlerResult {
+    let user_idx = authenticate(&state, &request.name, &request.pass)?;
     run(
         &state,
         GameCmd::CraftSingleRune {
-            user_idx: request.user_idx,
+            user_idx,
             frag: request.frag,
         },
     )
@@ -162,10 +190,11 @@ async fn craft_random_rune(
     State(state): State<GameState>,
     Json(request): Json<RandomRuneRequest>,
 ) -> HandlerResult {
+    let user_idx = authenticate(&state, &request.name, &request.pass)?;
     run(
         &state,
         GameCmd::CraftRandomRune {
-            user_idx: request.user_idx,
+            user_idx,
             frags: request.frags,
         },
     )
@@ -173,13 +202,14 @@ async fn craft_random_rune(
 
 async fn place_frag(
     State(state): State<GameState>,
-    Json(request): Json<PlaceFragmentRequest>,
+    Json(request): Json<PlaceFragRequest>,
 ) -> HandlerResult {
+    let user_idx = authenticate(&state, &request.name, &request.pass)?;
     run(
         &state,
         GameCmd::PlaceFrag {
-            user_idx: request.user_idx,
-            user_name: request.user_name,
+            user_idx,
+            user_name: request.name,
             x: request.x,
             y: request.y,
             frag: request.frag,
@@ -191,11 +221,12 @@ async fn place_rune(
     State(state): State<GameState>,
     Json(request): Json<PlaceRuneRequest>,
 ) -> HandlerResult {
+    let user_idx = authenticate(&state, &request.name, &request.pass)?;
     run(
         &state,
         GameCmd::PlaceRune {
-            user_idx: request.user_idx,
-            user_name: request.user_name,
+            user_idx,
+            user_name: request.name,
             x: request.x,
             y: request.y,
             rune: request.rune,

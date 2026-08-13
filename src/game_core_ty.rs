@@ -34,6 +34,7 @@ pub struct Game {
 #[serde(tag = "error", content = "details")]
 pub enum GameError {
     PlayerAlreadyExists,
+    InvalidCredentials,
     PlayerNotFound {
         user_idx: usize,
     },
