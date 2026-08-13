@@ -13,10 +13,15 @@ pub const PUZZLE_WORDS: [&str; 20] = [
     "knife", "lemon", "mouse", "night", "ocean", "plant", "queen", "river", "stone", "tiger",
 ];
 
+pub type Username = String;
+pub type Password = String;
+pub type UserIdx = usize;
+
 pub struct Game {
-    pub user_map: HashMap<String, usize>,
+    pub user_map: HashMap<Username, (UserIdx, Password)>,
     pub user: Vec<User>,
     pub tile: Vec<Vec<Tile>>,
+
     pub protocol_gem: u32,
     pub treasury_gem: u32,
     pub games_bought: u32,

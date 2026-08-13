@@ -29,15 +29,14 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             Ok(())
         }
         GameCmd::CreatePlayer { name, pass } => {
-            let user_key = format!("{name}{pass}");
-            if game.user_map.contains_key(&user_key) {
+            if game.user_map.contains_key(&name) {
                 return Err(GameError::PlayerAlreadyExists);
             }
 
             let user_idx = game.user.len();
             let new_user = User {
-                name,
-                pass,
+                name: name.clone(),
+                pass: pass.clone(),
                 gem: 0,
                 exp: 0,
                 exp_next: 200,
@@ -48,7 +47,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                 prev_puzzle: Vec::new(),
             };
 
-            game.user_map.insert(user_key, user_idx);
+            game.user_map.insert(name, (user_idx, pass));
             game.user.push(new_user);
             Ok(())
         }
