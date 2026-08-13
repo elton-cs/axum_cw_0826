@@ -24,12 +24,14 @@ pub enum GameCmd {
     },
     PlaceFrag {
         user_idx: usize,
+        user_name: String,
         x: usize,
         y: usize,
         frag: char,
     },
     PlaceRune {
         user_idx: usize,
+        user_name: String,
         x: usize,
         y: usize,
         rune: char,
@@ -137,16 +139,87 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), ()> {
         }
         GameCmd::PlaceFrag {
             user_idx,
+            user_name,
             x,
             y,
             frag,
-        } => todo!(),
+        } => {
+            if !user_idx < game.user.len() {
+                return Err(());
+            }
+            let Some(row) = game.tile.get_mut(x) else {
+                return Err(());
+            };
+            let Some(tile) = row.get_mut(y) else {
+                return Err(());
+            };
+
+            if tile.frag_letter.is_some() {
+                return Err(());
+            }
+
+            let user = &mut game.user[user_idx];
+            let frag_idx = frag as usize - 'a' as usize;
+
+            if user.frag_count[frag_idx] < 1 {
+                return Err(());
+            }
+
+            user.gem += tile.frag_gem;
+            user.exp += tile.frag_exp;
+            tile.frag_exp = 0;
+            tile.frag_gem = 0;
+            tile.frag_letter = Some(frag);
+            tile.frag_user_name = Some(user_name);
+
+            Ok(())
+        }
         GameCmd::PlaceRune {
             user_idx,
+            user_name,
             x,
             y,
             rune,
-        } => todo!(),
+        } => {
+            if !user_idx < game.user.len() {
+                return Err(());
+            }
+            let Some(row) = game.tile.get_mut(x) else {
+                return Err(());
+            };
+            let Some(tile) = row.get_mut(y) else {
+                return Err(());
+            };
+
+            if tile.rune_letter.is_some() {
+                return Err(());
+            }
+
+            let user = &mut game.user[user_idx];
+            let rune_idx = rune as usize - 'a' as usize;
+
+            if user.rune_count[rune_idx] < 1 {
+                return Err(());
+            }
+
+            match tile.frag_letter {
+                Some(frag) => {
+                    if !(frag == rune) {
+                        return Err(());
+                    }
+                }
+                None => return Err(()),
+            }
+
+            user.gem += tile.rune_gem;
+            user.exp += tile.rune_exp;
+            tile.rune_exp = 0;
+            tile.rune_gem = 0;
+            tile.rune_letter = Some(rune);
+            tile.rune_user_name = Some(user_name);
+
+            Ok(())
+        }
     }
 }
 
