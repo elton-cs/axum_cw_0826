@@ -112,6 +112,13 @@ fn letter_idx(letter: char) -> Result<usize, GameError> {
     }
 }
 
+fn handle_lvl_up(exp: &u32, next_exp: &mut u32, lvl: &mut u32) {
+    if exp >= next_exp {
+        *next_exp += (*next_exp as f32 * 1.1) as u32;
+        *lvl += 1;
+    }
+}
+
 pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> {
     match game_cmd {
         GameCmd::PopulateTiles { x, y } => {
@@ -152,6 +159,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                 pass,
                 gem: 0,
                 exp: 0,
+                exp_next: 200,
                 lvl: 0,
                 frag_count: [0; 26],
                 rune_count: [0; 26],
@@ -261,6 +269,8 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                             if attempt.hint.iter().all(|h| matches!(h, Hint::Correct)) {
                                 let frag_idx = puzzle.reward_frag as usize - 'a' as usize;
                                 user.exp += puzzle.reward_exp;
+                                handle_lvl_up(&user.exp, &mut user.exp_next, &mut user.lvl);
+
                                 user.frag_count[frag_idx] += 1;
                                 user.prev_puzzle.push(puzzle.clone());
                                 user.curr_puzzle = None;
@@ -303,6 +313,8 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             user.frag_count[frag_idx] -= 1;
             user.gem += tile.frag_gem;
             user.exp += tile.frag_exp;
+            handle_lvl_up(&user.exp, &mut user.exp_next, &mut user.lvl);
+
             tile.frag_exp = 0;
             tile.frag_gem = 0;
             tile.frag_letter = Some(frag);
@@ -329,6 +341,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             user.frag_count[frag_idx] -= 3;
             user.rune_count[frag_idx] += 1;
             user.exp += 500;
+            handle_lvl_up(&user.exp, &mut user.exp_next, &mut user.lvl);
 
             Ok(())
         }
@@ -360,6 +373,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             let rune_idx = rand::random_range(0..26);
             user.rune_count[rune_idx] += 1;
             user.exp += 250;
+            handle_lvl_up(&user.exp, &mut user.exp_next, &mut user.lvl);
 
             Ok(())
         }
@@ -403,6 +417,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             user.rune_count[rune_idx] -= 1;
             user.gem += tile.rune_gem;
             user.exp += tile.rune_exp;
+            handle_lvl_up(&user.exp, &mut user.exp_next, &mut user.lvl);
             tile.rune_exp = 0;
             tile.rune_gem = 0;
             tile.rune_letter = Some(rune);
@@ -419,6 +434,7 @@ pub struct User {
 
     pub gem: u32,
     pub exp: u32,
+    pub exp_next: u32,
     pub lvl: u32,
     pub frag_count: [u32; 26],
     pub rune_count: [u32; 26],
