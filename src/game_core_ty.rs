@@ -26,6 +26,11 @@ pub enum GameError {
         actual: usize,
     },
     PuzzleAttemptNotRecorded,
+    TilesAlreadyPopulated,
+    InvalidTileDimensions {
+        x: usize,
+        y: usize,
+    },
     TileNotFound {
         x: usize,
         y: usize,
@@ -51,6 +56,10 @@ pub enum GameError {
 }
 
 pub enum GameCmd {
+    PopulateTiles {
+        x: usize,
+        y: usize,
+    },
     CreatePlayer {
         name: String,
         pass: String,
@@ -92,6 +101,32 @@ pub enum GameCmd {
 
 pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> {
     match game_cmd {
+        GameCmd::PopulateTiles { x, y } => {
+            if !game.tile.is_empty() {
+                return Err(GameError::TilesAlreadyPopulated);
+            }
+            if x < 9 || y < 9 || x % 2 == 0 || y % 2 == 0 {
+                return Err(GameError::InvalidTileDimensions { x, y });
+            }
+
+            let center_x = x / 2;
+            let center_y = y / 2;
+            for tile_x in 0..x {
+                let mut row = Vec::with_capacity(y);
+                for tile_y in 0..y {
+                    let distance = tile_x.abs_diff(center_x) + tile_y.abs_diff(center_y);
+                    let distance = distance as u32;
+                    row.push(Tile {
+                        frag_exp: 1_000u32.saturating_add(distance.saturating_mul(100)),
+                        rune_exp: 5_000u32.saturating_add(distance.saturating_mul(500)),
+                        ..Tile::default()
+                    });
+                }
+                game.tile.push(row);
+            }
+
+            Ok(())
+        }
         GameCmd::CreatePlayer { name, pass } => {
             let user_key = format!("{name}{pass}");
             if game.user_map.contains_key(&user_key) {
@@ -139,8 +174,10 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             let reward_idx = rand::random_range(0..5);
             let reward_frag = correct_word.as_bytes()[reward_idx] as char;
 
+            let reward_exp = 100u32
+                .saturating_add((game.user[user_idx].prev_puzzle.len() as u32).saturating_mul(10));
             let puzzle = Some(Puzzle {
-                reward_exp: 100,
+                reward_exp,
                 reward_frag,
                 correct_word,
                 attempt_word: Vec::new(),
@@ -276,6 +313,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
 
             user.frag_count[frag_idx] -= 3;
             user.rune_count[frag_idx] += 1;
+            user.exp += 500;
 
             Ok(())
         }
@@ -306,6 +344,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             }
             let rune_idx = rand::random_range(0..26);
             user.rune_count[rune_idx] += 1;
+            user.exp += 250;
 
             Ok(())
         }
@@ -393,9 +432,8 @@ pub enum Hint {
     Correct,
 }
 
+#[derive(Default)]
 pub struct Tile {
-    pub x: u32,
-    pub y: u32,
     pub frag_exp: u32,
     pub rune_exp: u32,
     pub frag_gem: u32,
