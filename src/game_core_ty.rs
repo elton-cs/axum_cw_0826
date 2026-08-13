@@ -1,6 +1,12 @@
 use std::collections::HashMap;
 
-pub const GAME_PUZZLE_PRICE: u32 = 10;
+pub const PUZZLE_PRICE: u32 = 10;
+pub const TREASURY_FEE: u32 = 9;
+pub const PROTOCOL_FEE: u32 = PUZZLE_PRICE - TREASURY_FEE;
+
+pub const PRIZE_OPTION: [u32; 3] = [5, 10, 25];
+pub const FRAG_GEM_REWARD_INTERVAL: u32 = 13;
+pub const RUNE_GEM_REWARD_INTERVAL: u32 = 5;
 
 const PUZZLE_WORDS: [&str; 20] = [
     "apple", "beach", "chair", "dance", "eagle", "flame", "grape", "house", "index", "jelly",
@@ -11,6 +17,10 @@ pub struct Game {
     pub user_map: HashMap<String, usize>,
     pub user: Vec<User>,
     pub tile: Vec<Vec<Tile>>,
+    pub protocol_gem: u32,
+    pub treasury_gem: u32,
+    pub games_bought: u32,
+    pub is_frag_time: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +42,7 @@ pub enum GameError {
     },
     PuzzleAttemptNotRecorded,
     TilesAlreadyPopulated,
+    TilesNotPopulated,
     InvalidTileDimensions {
         x: usize,
         y: usize,
@@ -184,10 +195,12 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
         GameCmd::BuyPuzzle { user_idx } => {
             if user_idx >= game.user.len() {
                 return Err(GameError::PlayerNotFound { user_idx });
-            } else if game.user[user_idx].gem < GAME_PUZZLE_PRICE {
+            } else if game.user[user_idx].gem < PUZZLE_PRICE {
                 return Err(GameError::InsufficientGems);
             } else if game.user[user_idx].curr_puzzle.is_some() {
                 return Err(GameError::PuzzleAlreadyActive);
+            } else if game.tile.is_empty() || game.tile.iter().any(|row| row.is_empty()) {
+                return Err(GameError::TilesNotPopulated);
             }
 
             let word_idx = rand::random_range(0..PUZZLE_WORDS.len());
@@ -205,8 +218,32 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             });
 
             let user = &mut game.user[user_idx];
-            user.gem -= GAME_PUZZLE_PRICE;
             user.curr_puzzle = puzzle;
+            user.gem -= PUZZLE_PRICE;
+            game.treasury_gem += TREASURY_FEE;
+            game.protocol_gem += PROTOCOL_FEE;
+            game.games_bought += 1;
+
+            match PRIZE_OPTION.last() {
+                None => panic!(),
+                Some(highest_prize) => {
+                    if &game.treasury_gem > highest_prize {
+                        let rand_x_idx = rand::random_range(0..game.tile.len());
+                        let rand_y_idx = rand::random_range(0..game.tile[rand_x_idx].len());
+                        let rand_gem_idx = rand::random_range(0..PRIZE_OPTION.len());
+                        game.is_frag_time = !game.is_frag_time;
+                        if game.is_frag_time {
+                            let prize = PRIZE_OPTION[rand_gem_idx];
+                            game.tile[rand_x_idx][rand_y_idx].frag_gem += prize;
+                            game.treasury_gem -= prize;
+                        } else {
+                            let prize = PRIZE_OPTION[rand_gem_idx];
+                            game.tile[rand_x_idx][rand_y_idx].rune_gem += prize;
+                            game.treasury_gem -= prize;
+                        }
+                    }
+                }
+            }
 
             Ok(())
         }
