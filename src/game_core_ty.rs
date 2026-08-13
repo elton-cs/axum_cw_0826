@@ -17,6 +17,7 @@ pub type Username = String;
 pub type Password = String;
 pub type UserIdx = usize;
 
+#[derive(Debug, Default)]
 pub struct Game {
     pub user_map: HashMap<Username, (UserIdx, Password)>,
     pub user: Vec<User>,
@@ -157,7 +158,7 @@ pub enum Hint {
     Correct,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Tile {
     pub frag_exp: u32,
     pub rune_exp: u32,
