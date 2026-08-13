@@ -18,8 +18,8 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                     let distance = tile_x.abs_diff(center_x) + tile_y.abs_diff(center_y);
                     let distance = distance as u32;
                     row.push(Tile {
-                        frag_exp: 1_000u32.saturating_add(distance.saturating_mul(100)),
-                        rune_exp: 5_000u32.saturating_add(distance.saturating_mul(500)),
+                        frag_exp: 1_000 + distance * 100,
+                        rune_exp: 5_000 + distance * 500,
                         ..Tile::default()
                     });
                 }
@@ -77,8 +77,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             let reward_idx = rand::random_range(0..5);
             let reward_frag = correct_word.as_bytes()[reward_idx] as char;
 
-            let reward_exp = 100u32
-                .saturating_add((game.user[user_idx].prev_puzzle.len() as u32).saturating_mul(10));
+            let reward_exp = 100 + game.user[user_idx].prev_puzzle.len() as u32 * 10;
             let puzzle = Some(Puzzle {
                 reward_exp,
                 reward_frag,
