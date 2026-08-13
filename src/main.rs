@@ -3,13 +3,13 @@ pub mod game_core_ty;
 
 use axum::{
     Router,
-    extract::{Json, State},
+    extract::{Json, Query, State},
     http::StatusCode,
-    routing::post,
+    routing::{get, post},
 };
 use game_core_fn::update_game;
-use game_core_ty::{Game, GameCmd, GameError};
-use serde::Deserialize;
+use game_core_ty::{Attempt, Game, GameCmd, GameError, Puzzle, Tile, User};
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 
@@ -34,6 +34,9 @@ pub fn router(state: GameState) -> Router {
         .route("/game/craft-random-rune", post(craft_random_rune))
         .route("/game/place-frag", post(place_frag))
         .route("/game/place-rune", post(place_rune))
+        .route("/game/tiles", get(get_tiles))
+        .route("/game/stats", get(get_game_stats))
+        .route("/game/user", get(get_user))
         .with_state(state)
 }
 
@@ -45,6 +48,46 @@ type AuthResult = Result<usize, (StatusCode, Json<GameError>)>;
 struct CreatePlayerRequest {
     name: String,
     pass: String,
+}
+
+#[derive(Deserialize)]
+struct UserQuery {
+    name: String,
+}
+
+#[derive(Serialize)]
+struct GameStatsResponse {
+    protocol_gem: u32,
+    treasury_gem: u32,
+    games_bought: u32,
+}
+
+#[derive(Serialize)]
+struct UserResponse {
+    name: String,
+    gem: u32,
+    exp: u32,
+    exp_next: u32,
+    lvl: u32,
+    frag_count: [u32; 26],
+    rune_count: [u32; 26],
+    curr_puzzle: Option<CurrentPuzzleResponse>,
+    prev_puzzle: Vec<PreviousPuzzleResponse>,
+}
+
+#[derive(Serialize)]
+struct CurrentPuzzleResponse {
+    reward_exp: u32,
+    reward_frag: char,
+    attempt_word: Vec<Attempt>,
+}
+
+#[derive(Serialize)]
+struct PreviousPuzzleResponse {
+    reward_exp: u32,
+    reward_frag: char,
+    correct_word: String,
+    attempt_word: Vec<Attempt>,
 }
 
 #[derive(Deserialize)]
@@ -99,30 +142,41 @@ struct PlaceRuneRequest {
     rune: char,
 }
 
-fn authenticate(state: &GameState, name: &str, pass: &str) -> AuthResult {
+async fn get_tiles(State(state): State<GameState>) -> Json<Vec<Vec<Tile>>> {
     let game = state.lock().expect("game state lock poisoned");
-    let Some((user_idx, stored_pass)) = game.user_map.get(name) else {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(GameError::InvalidCredentials),
-        ));
-    };
-    if stored_pass != pass {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(GameError::InvalidCredentials),
-        ));
-    }
-    Ok(*user_idx)
+    Json(game.tile.clone())
 }
 
-fn run(state: &GameState, command: GameCmd) -> HandlerResult {
-    update_game(
-        &mut state.lock().expect("game state lock poisoned"),
-        command,
-    )
-    .map(|_| StatusCode::OK)
-    .map_err(|error| (StatusCode::BAD_REQUEST, Json(error)))
+async fn get_game_stats(State(state): State<GameState>) -> Json<GameStatsResponse> {
+    let game = state.lock().expect("game state lock poisoned");
+    Json(GameStatsResponse {
+        protocol_gem: game.protocol_gem,
+        treasury_gem: game.treasury_gem,
+        games_bought: game.games_bought,
+    })
+}
+
+async fn get_user(
+    State(state): State<GameState>,
+    Query(request): Query<UserQuery>,
+) -> Result<Json<UserResponse>, (StatusCode, Json<GameError>)> {
+    let game = state.lock().expect("game state lock poisoned");
+    let Some((user_idx, _)) = game.user_map.get(&request.name) else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(GameError::PlayerNotFoundByName { name: request.name }),
+        ));
+    };
+    let Some(user) = game.user.get(*user_idx) else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(GameError::PlayerNotFound {
+                user_idx: *user_idx,
+            }),
+        ));
+    };
+
+    Ok(Json(user_response(user)))
 }
 
 async fn create_player(
@@ -234,4 +288,65 @@ async fn place_rune(
             rune: request.rune,
         },
     )
+}
+
+fn user_response(user: &User) -> UserResponse {
+    UserResponse {
+        name: user.name.clone(),
+        gem: user.gem,
+        exp: user.exp,
+        exp_next: user.exp_next,
+        lvl: user.lvl,
+        frag_count: user.frag_count,
+        rune_count: user.rune_count,
+        curr_puzzle: user.curr_puzzle.as_ref().map(current_puzzle_response),
+        prev_puzzle: user
+            .prev_puzzle
+            .iter()
+            .map(previous_puzzle_response)
+            .collect(),
+    }
+}
+
+fn current_puzzle_response(puzzle: &Puzzle) -> CurrentPuzzleResponse {
+    CurrentPuzzleResponse {
+        reward_exp: puzzle.reward_exp,
+        reward_frag: puzzle.reward_frag,
+        attempt_word: puzzle.attempt_word.clone(),
+    }
+}
+
+fn previous_puzzle_response(puzzle: &Puzzle) -> PreviousPuzzleResponse {
+    PreviousPuzzleResponse {
+        reward_exp: puzzle.reward_exp,
+        reward_frag: puzzle.reward_frag,
+        correct_word: puzzle.correct_word.clone(),
+        attempt_word: puzzle.attempt_word.clone(),
+    }
+}
+
+fn authenticate(state: &GameState, name: &str, pass: &str) -> AuthResult {
+    let game = state.lock().expect("game state lock poisoned");
+    let Some((user_idx, stored_pass)) = game.user_map.get(name) else {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(GameError::InvalidCredentials),
+        ));
+    };
+    if stored_pass != pass {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(GameError::InvalidCredentials),
+        ));
+    }
+    Ok(*user_idx)
+}
+
+fn run(state: &GameState, command: GameCmd) -> HandlerResult {
+    update_game(
+        &mut state.lock().expect("game state lock poisoned"),
+        command,
+    )
+    .map(|_| StatusCode::OK)
+    .map_err(|error| (StatusCode::BAD_REQUEST, Json(error)))
 }

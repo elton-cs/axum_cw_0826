@@ -38,6 +38,9 @@ pub enum GameError {
     PlayerNotFound {
         user_idx: usize,
     },
+    PlayerNotFoundByName {
+        name: String,
+    },
     PlayerAlreadyHasGems,
     InsufficientGems,
     PuzzleAlreadyActive,
@@ -148,20 +151,20 @@ pub struct Puzzle {
     pub attempt_word: Vec<Attempt>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Attempt {
     pub word: String,
     pub hint: [Hint; 5],
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub enum Hint {
     Missing,
     Present,
     Correct,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct Tile {
     pub frag_exp: u32,
     pub rune_exp: u32,
