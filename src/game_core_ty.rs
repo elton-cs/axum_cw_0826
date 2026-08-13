@@ -1,9 +1,53 @@
 use std::collections::HashMap;
 
+const PUZZLE_WORDS: [&str; 20] = [
+    "apple", "beach", "chair", "dance", "eagle", "flame", "grape", "house", "index", "jelly",
+    "knife", "lemon", "mouse", "night", "ocean", "plant", "queen", "river", "stone", "tiger",
+];
+
 pub struct Game {
     pub user_map: HashMap<String, usize>,
     pub user: Vec<User>,
     pub tile: Vec<Vec<Tile>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GameError {
+    PlayerAlreadyExists,
+    PlayerNotFound {
+        user_idx: usize,
+    },
+    PlayerAlreadyHasGems,
+    InsufficientGems,
+    PuzzleAlreadyActive,
+    NoActivePuzzle,
+    InvalidGuessLength {
+        expected: usize,
+        actual: usize,
+    },
+    PuzzleAttemptNotRecorded,
+    TileNotFound {
+        x: usize,
+        y: usize,
+    },
+    FragmentAlreadyPlaced,
+    FragmentNotOwned {
+        fragment: char,
+    },
+    InsufficientFragments {
+        frag: char,
+        required: u32,
+        available: u32,
+    },
+    RuneAlreadyPlaced,
+    RuneNotOwned {
+        rune: char,
+    },
+    FragmentRequiredBeforeRune,
+    RuneDoesNotMatchFragment {
+        rune: char,
+        fragment: char,
+    },
 }
 
 pub enum GameCmd {
@@ -29,6 +73,14 @@ pub enum GameCmd {
         y: usize,
         frag: char,
     },
+    CraftSingleRune {
+        user_idx: usize,
+        frag: char,
+    },
+    CraftRandomRune {
+        user_idx: usize,
+        frags: [char; 5],
+    },
     PlaceRune {
         user_idx: usize,
         user_name: String,
@@ -38,12 +90,12 @@ pub enum GameCmd {
     },
 }
 
-pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), ()> {
+pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> {
     match game_cmd {
         GameCmd::CreatePlayer { name, pass } => {
             let user_key = format!("{name}{pass}");
             if game.user_map.contains_key(&user_key) {
-                return Err(());
+                return Err(GameError::PlayerAlreadyExists);
             }
 
             let user_idx = game.user.len();
@@ -65,9 +117,9 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), ()> {
         }
         GameCmd::GiftFreeGems { user_idx, gem_gift } => {
             if !user_idx < game.user.len() {
-                return Err(());
+                return Err(GameError::PlayerNotFound { user_idx });
             } else if game.user[user_idx].gem != 0 {
-                return Err(());
+                return Err(GameError::PlayerAlreadyHasGems);
             }
 
             game.user[user_idx].gem += gem_gift;
@@ -75,17 +127,21 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), ()> {
         }
         GameCmd::BuyPuzzle { user_idx } => {
             if !user_idx < game.user.len() {
-                return Err(());
+                return Err(GameError::PlayerNotFound { user_idx });
             } else if game.user[user_idx].gem == 0 {
-                return Err(());
+                return Err(GameError::InsufficientGems);
             } else if game.user[user_idx].curr_puzzle.is_some() {
-                return Err(());
+                return Err(GameError::PuzzleAlreadyActive);
             }
 
-            let correct_word = "jesus".to_string();
+            let word_idx = rand::random_range(0..PUZZLE_WORDS.len());
+            let correct_word = PUZZLE_WORDS[word_idx].to_string();
+            let reward_idx = rand::random_range(0..5);
+            let reward_frag = correct_word.as_bytes()[reward_idx] as char;
+
             let puzzle = Some(Puzzle {
                 reward_exp: 100,
-                reward_frag: 'j',
+                reward_frag,
                 correct_word,
                 attempt_word: Vec::new(),
             });
@@ -100,19 +156,47 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), ()> {
             guess_word,
         } => {
             if !user_idx < game.user.len() {
-                return Err(());
+                return Err(GameError::PlayerNotFound { user_idx });
             }
 
             let user = &mut game.user[user_idx];
             match &mut user.curr_puzzle {
-                None => return Err(()),
+                None => return Err(GameError::NoActivePuzzle),
                 Some(puzzle) => {
-                    // simple tmp check for correct guess
-                    let hint = if puzzle.correct_word == guess_word {
-                        [Hint::Missing; 5]
-                    } else {
-                        [Hint::Correct; 5]
-                    };
+                    let guess_letters: Vec<char> = guess_word.chars().collect();
+                    if guess_letters.len() != 5 {
+                        return Err(GameError::InvalidGuessLength {
+                            expected: 5,
+                            actual: guess_letters.len(),
+                        });
+                    }
+
+                    let correct_letters: Vec<char> = puzzle.correct_word.chars().collect();
+                    let mut hint = [Hint::Missing; 5];
+                    let mut matched = [false; 5];
+
+                    for idx in 0..5 {
+                        if guess_letters[idx] == correct_letters[idx] {
+                            hint[idx] = Hint::Correct;
+                            matched[idx] = true;
+                        }
+                    }
+
+                    for guess_idx in 0..5 {
+                        if matches!(hint[guess_idx], Hint::Correct) {
+                            continue;
+                        }
+
+                        for correct_idx in 0..5 {
+                            if !matched[correct_idx]
+                                && guess_letters[guess_idx] == correct_letters[correct_idx]
+                            {
+                                hint[guess_idx] = Hint::Present;
+                                matched[correct_idx] = true;
+                                break;
+                            }
+                        }
+                    }
 
                     let attempt = Attempt {
                         word: guess_word,
@@ -121,7 +205,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), ()> {
 
                     puzzle.attempt_word.push(attempt);
                     match puzzle.attempt_word.last() {
-                        None => return Err(()),
+                        None => return Err(GameError::PuzzleAttemptNotRecorded),
                         Some(attempt) => {
                             if attempt.hint.iter().all(|h| matches!(h, Hint::Correct)) {
                                 let frag_idx = puzzle.reward_frag as usize - 'a' as usize;
@@ -145,24 +229,24 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), ()> {
             frag,
         } => {
             if !user_idx < game.user.len() {
-                return Err(());
+                return Err(GameError::PlayerNotFound { user_idx });
             }
             let Some(row) = game.tile.get_mut(x) else {
-                return Err(());
+                return Err(GameError::TileNotFound { x, y });
             };
             let Some(tile) = row.get_mut(y) else {
-                return Err(());
+                return Err(GameError::TileNotFound { x, y });
             };
 
             if tile.frag_letter.is_some() {
-                return Err(());
+                return Err(GameError::FragmentAlreadyPlaced);
             }
 
             let user = &mut game.user[user_idx];
             let frag_idx = frag as usize - 'a' as usize;
 
             if user.frag_count[frag_idx] < 1 {
-                return Err(());
+                return Err(GameError::FragmentNotOwned { fragment: frag });
             }
 
             user.gem += tile.frag_gem;
@@ -174,6 +258,57 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), ()> {
 
             Ok(())
         }
+        GameCmd::CraftSingleRune { user_idx, frag } => {
+            if !user_idx < game.user.len() {
+                return Err(GameError::PlayerNotFound { user_idx });
+            }
+
+            let user = &mut game.user[user_idx];
+            let frag_idx = frag as usize - 'a' as usize;
+
+            if user.frag_count[frag_idx] < 3 {
+                return Err(GameError::InsufficientFragments {
+                    frag,
+                    required: 3,
+                    available: user.frag_count[frag_idx],
+                });
+            }
+
+            user.frag_count[frag_idx] -= 3;
+            user.rune_count[frag_idx] += 1;
+
+            Ok(())
+        }
+        GameCmd::CraftRandomRune { user_idx, frags } => {
+            if !user_idx < game.user.len() {
+                return Err(GameError::PlayerNotFound { user_idx });
+            }
+
+            let mut required_frags = [0_u32; 26];
+            for frag in frags {
+                let frag_idx = frag as usize - 'a' as usize;
+                required_frags[frag_idx] += 1;
+            }
+
+            let user = &mut game.user[user_idx];
+            for (frag_idx, required) in required_frags.iter().copied().enumerate() {
+                if user.frag_count[frag_idx] < required {
+                    return Err(GameError::InsufficientFragments {
+                        frag: char::from(b'a' + frag_idx as u8),
+                        required,
+                        available: user.frag_count[frag_idx],
+                    });
+                }
+            }
+
+            for (frag_idx, required) in required_frags.iter().copied().enumerate() {
+                user.frag_count[frag_idx] -= required;
+            }
+            let rune_idx = rand::random_range(0..26);
+            user.rune_count[rune_idx] += 1;
+
+            Ok(())
+        }
         GameCmd::PlaceRune {
             user_idx,
             user_name,
@@ -182,33 +317,33 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), ()> {
             rune,
         } => {
             if !user_idx < game.user.len() {
-                return Err(());
+                return Err(GameError::PlayerNotFound { user_idx });
             }
             let Some(row) = game.tile.get_mut(x) else {
-                return Err(());
+                return Err(GameError::TileNotFound { x, y });
             };
             let Some(tile) = row.get_mut(y) else {
-                return Err(());
+                return Err(GameError::TileNotFound { x, y });
             };
 
             if tile.rune_letter.is_some() {
-                return Err(());
+                return Err(GameError::RuneAlreadyPlaced);
             }
 
             let user = &mut game.user[user_idx];
             let rune_idx = rune as usize - 'a' as usize;
 
             if user.rune_count[rune_idx] < 1 {
-                return Err(());
+                return Err(GameError::RuneNotOwned { rune });
             }
 
             match tile.frag_letter {
-                Some(frag) => {
-                    if !(frag == rune) {
-                        return Err(());
+                Some(fragment) => {
+                    if fragment != rune {
+                        return Err(GameError::RuneDoesNotMatchFragment { rune, fragment });
                     }
                 }
-                None => return Err(()),
+                None => return Err(GameError::FragmentRequiredBeforeRune),
             }
 
             user.gem += tile.rune_gem;
