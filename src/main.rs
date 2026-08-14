@@ -8,7 +8,7 @@ use axum::{
     routing::{get, post},
 };
 use game_core_fn::update_game;
-use game_core_ty::{Attempt, Game, GameCmd, GameError, Puzzle, Tile, User};
+use game_core_ty::{Attempt, FREE_GEM_GIFT, Game, GameCmd, GameError, Puzzle, Tile, User};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
@@ -94,7 +94,6 @@ struct PreviousPuzzleResponse {
 struct ClaimFreeGemsRequest {
     name: String,
     pass: String,
-    gem_gift: u32,
 }
 
 #[derive(Deserialize)]
@@ -201,7 +200,7 @@ async fn claim_free_gems(
         &state,
         GameCmd::ClaimFreeGems {
             user_idx,
-            gem_gift: request.gem_gift,
+            gem_gift: FREE_GEM_GIFT,
         },
     )
 }
