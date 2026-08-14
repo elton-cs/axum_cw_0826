@@ -172,7 +172,10 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                     match puzzle.attempt_word.last() {
                         None => return Err(GameError::PuzzleAttemptNotRecorded),
                         Some(attempt) => {
-                            if attempt.hint.iter().all(|h| matches!(h, Hint::Correct)) {
+                            let solved = attempt.hint.iter().all(|h| matches!(h, Hint::Correct));
+                            let attempts_exhausted =
+                                puzzle.attempt_word.len() >= MAX_PUZZLE_ATTEMPTS;
+                            if solved {
                                 let frag_idx = puzzle.reward_frag as usize - 'a' as usize;
                                 handle_lvl_up(
                                     &mut user.exp,
@@ -185,12 +188,27 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                                 user.frag_count[frag_idx] += 1;
                                 user.prev_puzzle.push(puzzle.clone());
                                 user.curr_puzzle = None;
+                            } else if attempts_exhausted {
+                                user.prev_puzzle.push(puzzle.clone());
+                                user.curr_puzzle = None;
                             }
                         }
                     }
                 }
             }
 
+            Ok(())
+        }
+        GameCmd::GiveUpPuzzle { user_idx } => {
+            if user_idx >= game.user.len() {
+                return Err(GameError::PlayerNotFound { user_idx });
+            }
+
+            let user = &mut game.user[user_idx];
+            let Some(puzzle) = user.curr_puzzle.take() else {
+                return Err(GameError::NoActivePuzzle);
+            };
+            user.prev_puzzle.push(puzzle);
             Ok(())
         }
         GameCmd::PlaceFrag {

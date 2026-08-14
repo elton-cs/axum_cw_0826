@@ -30,6 +30,7 @@ pub fn router(state: GameState) -> Router {
         .route("/game/claim-free-gems", post(claim_free_gems))
         .route("/game/buy-puzzle", post(buy_puzzle))
         .route("/game/guess-puzzle", post(guess_puzzle))
+        .route("/game/give-up-puzzle", post(give_up_puzzle))
         .route("/game/craft-single-rune", post(craft_single_rune))
         .route("/game/craft-random-rune", post(craft_random_rune))
         .route("/game/place-frag", post(place_frag))
@@ -108,6 +109,12 @@ struct GuessPuzzleRequest {
     name: String,
     pass: String,
     guess_word: String,
+}
+
+#[derive(Deserialize)]
+struct GiveUpPuzzleRequest {
+    name: String,
+    pass: String,
 }
 
 #[derive(Deserialize)]
@@ -226,6 +233,14 @@ async fn guess_puzzle(
             guess_word: request.guess_word,
         },
     )
+}
+
+async fn give_up_puzzle(
+    State(state): State<GameState>,
+    Json(request): Json<GiveUpPuzzleRequest>,
+) -> HandlerResult {
+    let user_idx = authenticate(&state, &request.name, &request.pass)?;
+    run(&state, GameCmd::GiveUpPuzzle { user_idx })
 }
 
 async fn craft_single_rune(
