@@ -135,6 +135,7 @@ pub struct User {
 
     pub gem: u32,
     pub exp: u32,
+    pub exp_total: u32,
     pub exp_next: u32,
     pub lvl: u32,
     pub frag_count: [u32; 26],

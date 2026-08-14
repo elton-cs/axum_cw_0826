@@ -39,7 +39,8 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                 pass: pass.clone(),
                 gem: 0,
                 exp: 0,
-                exp_next: 200,
+                exp_total: 0,
+                exp_next: 1000,
                 lvl: 0,
                 frag_count: [0; 26],
                 rune_count: [0; 26],
@@ -173,8 +174,13 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                         Some(attempt) => {
                             if attempt.hint.iter().all(|h| matches!(h, Hint::Correct)) {
                                 let frag_idx = puzzle.reward_frag as usize - 'a' as usize;
-                                user.exp += puzzle.reward_exp;
-                                handle_lvl_up(&user.exp, &mut user.exp_next, &mut user.lvl);
+                                handle_lvl_up(
+                                    &mut user.exp,
+                                    &mut user.exp_total,
+                                    &mut user.exp_next,
+                                    &mut user.lvl,
+                                    puzzle.reward_exp,
+                                );
 
                                 user.frag_count[frag_idx] += 1;
                                 user.prev_puzzle.push(puzzle.clone());
@@ -217,8 +223,13 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
 
             user.frag_count[frag_idx] -= 1;
             user.gem += tile.frag_gem;
-            user.exp += tile.frag_exp;
-            handle_lvl_up(&user.exp, &mut user.exp_next, &mut user.lvl);
+            handle_lvl_up(
+                &mut user.exp,
+                &mut user.exp_total,
+                &mut user.exp_next,
+                &mut user.lvl,
+                tile.frag_exp,
+            );
 
             tile.frag_exp = 0;
             tile.frag_gem = 0;
@@ -245,8 +256,13 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
 
             user.frag_count[frag_idx] -= 3;
             user.rune_count[frag_idx] += 1;
-            user.exp += 500;
-            handle_lvl_up(&user.exp, &mut user.exp_next, &mut user.lvl);
+            handle_lvl_up(
+                &mut user.exp,
+                &mut user.exp_total,
+                &mut user.exp_next,
+                &mut user.lvl,
+                500,
+            );
 
             Ok(())
         }
@@ -277,8 +293,13 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             }
             let rune_idx = rand::random_range(0..26);
             user.rune_count[rune_idx] += 1;
-            user.exp += 250;
-            handle_lvl_up(&user.exp, &mut user.exp_next, &mut user.lvl);
+            handle_lvl_up(
+                &mut user.exp,
+                &mut user.exp_total,
+                &mut user.exp_next,
+                &mut user.lvl,
+                250,
+            );
 
             Ok(())
         }
@@ -321,8 +342,13 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
 
             user.rune_count[rune_idx] -= 1;
             user.gem += tile.rune_gem;
-            user.exp += tile.rune_exp;
-            handle_lvl_up(&user.exp, &mut user.exp_next, &mut user.lvl);
+            handle_lvl_up(
+                &mut user.exp,
+                &mut user.exp_total,
+                &mut user.exp_next,
+                &mut user.lvl,
+                tile.rune_exp,
+            );
             tile.rune_exp = 0;
             tile.rune_gem = 0;
             tile.rune_letter = Some(rune);
@@ -341,9 +367,19 @@ fn letter_idx(letter: char) -> Result<usize, GameError> {
     }
 }
 
-fn handle_lvl_up(exp: &u32, next_exp: &mut u32, lvl: &mut u32) {
-    if exp >= next_exp {
-        *next_exp += (*next_exp as f32 * 1.1) as u32;
+fn handle_lvl_up(
+    exp: &mut u32,
+    exp_total: &mut u32,
+    exp_next: &mut u32,
+    lvl: &mut u32,
+    reward_exp: u32,
+) {
+    *exp += reward_exp;
+    *exp_total += reward_exp;
+
+    while *exp >= *exp_next {
+        *exp -= *exp_next;
+        *exp_next += (*exp_next as f32 * 1.1) as u32;
         *lvl += 1;
     }
 }
