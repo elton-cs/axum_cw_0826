@@ -28,6 +28,51 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
 
             Ok(())
         }
+        GameCmd::FlushTileGemRewards => {
+            if game.tile.is_empty() || game.tile.iter().any(|row| row.is_empty()) {
+                return Err(GameError::TilesNotPopulated);
+            }
+
+            let mut rewards = Vec::new();
+            for row in &game.tile {
+                for tile in row {
+                    let (Some(_), Some(_), Some(frag_user_name), Some(rune_user_name)) = (
+                        tile.frag_letter,
+                        tile.rune_letter,
+                        &tile.frag_user_name,
+                        &tile.rune_user_name,
+                    ) else {
+                        return Err(GameError::TilesNotFilled);
+                    };
+
+                    let Some((frag_user_idx, _)) = game.user_map.get(frag_user_name) else {
+                        return Err(GameError::PlayerNotFoundByName {
+                            name: frag_user_name.clone(),
+                        });
+                    };
+                    let Some((rune_user_idx, _)) = game.user_map.get(rune_user_name) else {
+                        return Err(GameError::PlayerNotFoundByName {
+                            name: rune_user_name.clone(),
+                        });
+                    };
+
+                    rewards.push((*frag_user_idx, tile.frag_gem, *rune_user_idx, tile.rune_gem));
+                }
+            }
+
+            for (frag_user_idx, frag_gem, rune_user_idx, rune_gem) in rewards {
+                game.user[frag_user_idx].gem += frag_gem;
+                game.user[rune_user_idx].gem += rune_gem;
+            }
+            for row in &mut game.tile {
+                for tile in row {
+                    tile.frag_gem = 0;
+                    tile.rune_gem = 0;
+                }
+            }
+
+            Ok(())
+        }
         GameCmd::CreatePlayer { name, pass } => {
             if game.user_map.contains_key(&name) {
                 return Err(GameError::PlayerAlreadyExists);

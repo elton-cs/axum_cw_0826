@@ -57,6 +57,7 @@ pub enum GameError {
     PuzzleAttemptNotRecorded,
     TilesAlreadyPopulated,
     TilesNotPopulated,
+    TilesNotFilled,
     InvalidTileDimensions {
         x: usize,
         y: usize,
@@ -90,6 +91,7 @@ pub enum GameCmd {
         x: usize,
         y: usize,
     },
+    FlushTileGemRewards,
     CreatePlayer {
         name: String,
         pass: String,
