@@ -8,7 +8,9 @@ use axum::{
     routing::{get, post},
 };
 use game_core_fn::update_game;
-use game_core_ty::{Attempt, FREE_GEM_GIFT, Game, GameCmd, GameError, Puzzle, Tile, User};
+use game_core_ty::{
+    Attempt, FREE_GEM_GIFT, Game, GameCmd, GameError, MAX_PUZZLE_ATTEMPTS, Puzzle, Tile, User,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
@@ -81,7 +83,7 @@ struct UserResponse {
 struct CurrentPuzzleResponse {
     reward_exp: u32,
     reward_frag: char,
-    attempt_word: Vec<Attempt>,
+    attempt_word: [Option<Attempt>; MAX_PUZZLE_ATTEMPTS],
 }
 
 #[derive(Serialize)]
@@ -89,7 +91,7 @@ struct PreviousPuzzleResponse {
     reward_exp: u32,
     reward_frag: char,
     correct_word: String,
-    attempt_word: Vec<Attempt>,
+    attempt_word: [Option<Attempt>; MAX_PUZZLE_ATTEMPTS],
 }
 
 #[derive(Deserialize)]

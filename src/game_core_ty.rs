@@ -154,7 +154,7 @@ pub struct Puzzle {
     pub reward_exp: u32,
     pub reward_frag: char,
     pub correct_word: String,
-    pub attempt_word: Vec<Attempt>,
+    pub attempt_word: [Option<Attempt>; MAX_PUZZLE_ATTEMPTS],
 }
 
 #[derive(Debug, Clone, Serialize)]

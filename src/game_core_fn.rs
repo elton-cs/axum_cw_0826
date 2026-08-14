@@ -83,7 +83,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                 reward_exp,
                 reward_frag,
                 correct_word,
-                attempt_word: Vec::new(),
+                attempt_word: [const { None }; MAX_PUZZLE_ATTEMPTS],
             });
 
             let user = &mut game.user[user_idx];
@@ -168,31 +168,33 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                         hint,
                     };
 
-                    puzzle.attempt_word.push(attempt);
-                    match puzzle.attempt_word.last() {
-                        None => return Err(GameError::PuzzleAttemptNotRecorded),
-                        Some(attempt) => {
-                            let solved = attempt.hint.iter().all(|h| matches!(h, Hint::Correct));
-                            let attempts_exhausted =
-                                puzzle.attempt_word.len() >= MAX_PUZZLE_ATTEMPTS;
-                            if solved {
-                                let frag_idx = puzzle.reward_frag as usize - 'a' as usize;
-                                handle_lvl_up(
-                                    &mut user.exp,
-                                    &mut user.exp_total,
-                                    &mut user.exp_next,
-                                    &mut user.lvl,
-                                    puzzle.reward_exp,
-                                );
+                    let Some(attempt_idx) = puzzle.attempt_word.iter().position(Option::is_none)
+                    else {
+                        return Err(GameError::PuzzleAttemptNotRecorded);
+                    };
+                    puzzle.attempt_word[attempt_idx] = Some(attempt);
 
-                                user.frag_count[frag_idx] += 1;
-                                user.prev_puzzle.push(puzzle.clone());
-                                user.curr_puzzle = None;
-                            } else if attempts_exhausted {
-                                user.prev_puzzle.push(puzzle.clone());
-                                user.curr_puzzle = None;
-                            }
-                        }
+                    let attempt = puzzle.attempt_word[attempt_idx]
+                        .as_ref()
+                        .ok_or(GameError::PuzzleAttemptNotRecorded)?;
+                    let solved = attempt.hint.iter().all(|h| matches!(h, Hint::Correct));
+                    let attempts_exhausted = attempt_idx + 1 >= MAX_PUZZLE_ATTEMPTS;
+                    if solved {
+                        let frag_idx = puzzle.reward_frag as usize - 'a' as usize;
+                        handle_lvl_up(
+                            &mut user.exp,
+                            &mut user.exp_total,
+                            &mut user.exp_next,
+                            &mut user.lvl,
+                            puzzle.reward_exp,
+                        );
+
+                        user.frag_count[frag_idx] += 1;
+                        user.prev_puzzle.push(puzzle.clone());
+                        user.curr_puzzle = None;
+                    } else if attempts_exhausted {
+                        user.prev_puzzle.push(puzzle.clone());
+                        user.curr_puzzle = None;
                     }
                 }
             }
