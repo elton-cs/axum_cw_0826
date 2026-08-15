@@ -14,11 +14,12 @@ use game_core_ty::{
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
+use tower_http::cors::CorsLayer;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
     let mut game = Game::default();
-    update_game(&mut game, GameCmd::ServerPopulateTiles { x: 9, y: 9 }).unwrap();
+    update_game(&mut game, GameCmd::ServerPopulateTiles { x: 5, y: 5 }).unwrap();
 
     let address = "127.0.0.1:3000";
     let listener = TcpListener::bind(address).await?;
@@ -40,6 +41,7 @@ pub fn router(state: GameState) -> Router {
         .route("/game/tiles", get(get_tiles))
         .route("/game/stats", get(get_game_stats))
         .route("/game/user", get(get_user))
+        .layer(CorsLayer::permissive())
         .with_state(state)
 }
 

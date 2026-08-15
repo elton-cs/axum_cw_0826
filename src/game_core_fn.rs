@@ -6,7 +6,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             if !game.tile.is_empty() {
                 return Err(GameError::TilesAlreadyPopulated);
             }
-            if x < 9 || y < 9 || x % 2 == 0 || y % 2 == 0 {
+            if x < 5 || y < 5 || x % 2 == 0 || y % 2 == 0 {
                 return Err(GameError::InvalidTileDimensions { x, y });
             }
 
