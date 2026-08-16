@@ -12,19 +12,75 @@ use game_core_ty::{
     Attempt, FREE_GEM_GIFT, Game, GameCmd, GameError, MAX_PUZZLE_ATTEMPTS, Puzzle, Tile, User,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+};
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 
+const GAME_STATE_PATH: &str = "game_state.json";
+
 #[tokio::main]
-async fn main() -> Result<(), std::io::Error> {
-    let mut game = Game::default();
-    update_game(&mut game, GameCmd::ServerPopulateTiles { x: 5, y: 5 }).unwrap();
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let state = Arc::new(Mutex::new(load_game()?));
 
     let address = "127.0.0.1:3000";
     let listener = TcpListener::bind(address).await?;
     println!("Server running at http://{address}");
-    axum::serve(listener, router(Arc::new(Mutex::new(game)))).await
+    axum::serve(listener, router(state.clone()))
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    let game = state
+        .lock()
+        .map_err(|_| std::io::Error::other("game state lock poisoned"))?;
+    save_game(&game)?;
+    println!("Game state saved to {GAME_STATE_PATH}");
+    Ok(())
+}
+
+fn load_game() -> Result<Game, Box<dyn std::error::Error>> {
+    if Path::new(GAME_STATE_PATH).exists() {
+        println!("Restoring game state from {GAME_STATE_PATH}");
+        return Ok(serde_json::from_str(&std::fs::read_to_string(
+            GAME_STATE_PATH,
+        )?)?);
+    }
+
+    let mut game = Game::default();
+    update_game(&mut game, GameCmd::ServerPopulateTiles { x: 5, y: 5 })
+        .map_err(|error| std::io::Error::other(format!("failed to initialize game: {error:?}")))?;
+    Ok(game)
+}
+
+fn save_game(game: &Game) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::write(GAME_STATE_PATH, serde_json::to_vec_pretty(game)?)?;
+    Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install termination signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
 }
 
 pub fn router(state: GameState) -> Router {

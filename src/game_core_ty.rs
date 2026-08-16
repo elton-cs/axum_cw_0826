@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub const PUZZLE_PRICE: u32 = 10;
@@ -20,7 +20,7 @@ pub type Username = String;
 pub type Password = String;
 pub type UserIdx = usize;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Game {
     pub user_map: HashMap<Username, (UserIdx, Password)>,
     pub user: Vec<User>,
@@ -136,7 +136,7 @@ pub enum GameCmd {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct User {
     pub name: String,
     pub pass: String,
@@ -153,7 +153,7 @@ pub struct User {
     pub prev_puzzle: Vec<Puzzle>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Puzzle {
     pub reward_exp: u32,
     pub reward_frag: char,
@@ -161,20 +161,20 @@ pub struct Puzzle {
     pub attempt_word: [Option<Attempt>; MAX_PUZZLE_ATTEMPTS],
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attempt {
     pub word: String,
     pub hint: [Hint; 5],
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Hint {
     Missing,
     Present,
     Correct,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Tile {
     pub frag_exp: u32,
     pub rune_exp: u32,
