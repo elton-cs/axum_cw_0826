@@ -10,13 +10,10 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                 return Err(GameError::InvalidTileDimensions { x, y });
             }
 
-            let center_x = x / 2;
-            let center_y = y / 2;
             for tile_x in 0..x {
                 let mut row = Vec::with_capacity(y);
                 for tile_y in 0..y {
-                    let distance = tile_x.abs_diff(center_x) + tile_y.abs_diff(center_y);
-                    let distance = distance as u32;
+                    let distance = (tile_x + tile_y) as u32;
                     row.push(Tile {
                         frag_exp: 1_000 + distance * 100,
                         rune_exp: 5_000 + distance * 500,
@@ -268,15 +265,36 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             if user_idx >= game.user.len() {
                 return Err(GameError::PlayerNotFound { user_idx });
             }
-            let Some(row) = game.tile.get_mut(x) else {
-                return Err(GameError::TileNotFound { x, y });
-            };
-            let Some(tile) = row.get_mut(y) else {
+            let Some(tile) = game.tile.get(x).and_then(|row| row.get(y)) else {
                 return Err(GameError::TileNotFound { x, y });
             };
 
             if tile.frag_letter.is_some() {
                 return Err(GameError::FragmentAlreadyPlaced);
+            }
+
+            let has_fragment = game
+                .tile
+                .iter()
+                .flatten()
+                .any(|tile| tile.frag_letter.is_some());
+            if !has_fragment && (x, y) != (0, 0) {
+                return Err(GameError::FirstFragmentMustBeAtOrigin);
+            }
+            if has_fragment {
+                let occupied = |x: usize, y: usize| {
+                    game.tile
+                        .get(x)
+                        .and_then(|row| row.get(y))
+                        .is_some_and(|tile| tile.frag_letter.is_some())
+                };
+                let has_adjacent_fragment = (x > 0 && occupied(x - 1, y))
+                    || occupied(x + 1, y)
+                    || (y > 0 && occupied(x, y - 1))
+                    || occupied(x, y + 1);
+                if !has_adjacent_fragment {
+                    return Err(GameError::FragmentMustBeAdjacent);
+                }
             }
 
             let frag_idx = letter_idx(frag)?;
@@ -286,6 +304,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
                 return Err(GameError::FragmentNotOwned { fragment: frag });
             }
 
+            let tile = &mut game.tile[x][y];
             user.frag_count[frag_idx] -= 1;
             user.gem += tile.frag_gem;
             handle_lvl_up(

@@ -67,6 +67,8 @@ pub enum GameError {
         y: usize,
     },
     FragmentAlreadyPlaced,
+    FirstFragmentMustBeAtOrigin,
+    FragmentMustBeAdjacent,
     FragmentNotOwned {
         fragment: char,
     },
