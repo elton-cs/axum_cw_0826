@@ -7,9 +7,10 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use game_core_fn::update_game;
+use game_core_fn::{ensure_tile_dimensions, update_game};
 use game_core_ty::{
-    Attempt, FREE_GEM_GIFT, Game, GameCmd, GameError, MAX_PUZZLE_ATTEMPTS, Puzzle, Tile, User,
+    Attempt, BOARD_HEIGHT, BOARD_WIDTH, FREE_GEM_GIFT, Game, GameCmd, GameError,
+    MAX_PUZZLE_ATTEMPTS, Puzzle, Tile, User,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -41,15 +42,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn load_game() -> Result<Game, Box<dyn std::error::Error>> {
-    if Path::new(GAME_STATE_PATH).exists() {
+    let mut game = if Path::new(GAME_STATE_PATH).exists() {
         println!("Restoring game state from {GAME_STATE_PATH}");
-        return Ok(serde_json::from_str(&std::fs::read_to_string(
-            GAME_STATE_PATH,
-        )?)?);
-    }
+        serde_json::from_str(&std::fs::read_to_string(GAME_STATE_PATH)?)?
+    } else {
+        Game::default()
+    };
 
-    let mut game = Game::default();
-    update_game(&mut game, GameCmd::ServerPopulateTiles { x: 5, y: 5 })
+    // Preserve existing placements while upgrading older 5 x 5 save files.
+    ensure_tile_dimensions(&mut game, BOARD_WIDTH, BOARD_HEIGHT)
         .map_err(|error| std::io::Error::other(format!("failed to initialize game: {error:?}")))?;
     Ok(game)
 }

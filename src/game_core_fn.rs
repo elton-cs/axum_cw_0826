@@ -6,24 +6,7 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
             if !game.tile.is_empty() {
                 return Err(GameError::TilesAlreadyPopulated);
             }
-            if x < 5 || y < 5 || x % 2 == 0 || y % 2 == 0 {
-                return Err(GameError::InvalidTileDimensions { x, y });
-            }
-
-            for tile_x in 0..x {
-                let mut row = Vec::with_capacity(y);
-                for tile_y in 0..y {
-                    let distance = (tile_x + tile_y) as u32;
-                    row.push(Tile {
-                        frag_exp: 1_000 + distance * 100,
-                        rune_exp: 5_000 + distance * 500,
-                        ..Tile::default()
-                    });
-                }
-                game.tile.push(row);
-            }
-
-            Ok(())
+            ensure_tile_dimensions(game, x, y)
         }
         GameCmd::FlushTileGemRewards => {
             if game.tile.is_empty() || game.tile.iter().any(|row| row.is_empty()) {
@@ -443,6 +426,48 @@ pub fn update_game(game: &mut Game, game_cmd: GameCmd) -> Result<(), GameError> 
     }
 }
 
+/// Expands an existing board without replacing populated tiles.
+///
+/// This is also used at startup to migrate boards created before the board was
+/// enlarged. Shrinking is intentionally rejected so player placements cannot
+/// be discarded.
+pub fn ensure_tile_dimensions(game: &mut Game, x: usize, y: usize) -> Result<(), GameError> {
+    if x < 5
+        || y < 5
+        || x.is_multiple_of(2)
+        || y.is_multiple_of(2)
+        || game.tile.len() > x
+        || game.tile.iter().any(|row| row.len() > y)
+    {
+        return Err(GameError::InvalidTileDimensions { x, y });
+    }
+
+    for (tile_x, row) in game.tile.iter_mut().enumerate() {
+        for tile_y in row.len()..y {
+            row.push(new_tile(tile_x, tile_y));
+        }
+    }
+
+    for tile_x in game.tile.len()..x {
+        let mut row = Vec::with_capacity(y);
+        for tile_y in 0..y {
+            row.push(new_tile(tile_x, tile_y));
+        }
+        game.tile.push(row);
+    }
+
+    Ok(())
+}
+
+fn new_tile(x: usize, y: usize) -> Tile {
+    let distance = (x + y) as u32;
+    Tile {
+        frag_exp: 1_000 + distance * 100,
+        rune_exp: 5_000 + distance * 500,
+        ..Tile::default()
+    }
+}
+
 fn letter_idx(letter: char) -> Result<usize, GameError> {
     if letter.is_ascii_lowercase() {
         Ok((letter as u8 - b'a') as usize)
@@ -465,5 +490,25 @@ fn handle_lvl_up(
         *exp -= *exp_next;
         *exp_next += (*exp_next as f32 * 1.1) as u32;
         *lvl += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expands_an_old_board_without_losing_tiles() {
+        let mut game = Game::default();
+        ensure_tile_dimensions(&mut game, 5, 5).unwrap();
+        game.tile[0][0].frag_letter = Some('a');
+
+        ensure_tile_dimensions(&mut game, BOARD_WIDTH, BOARD_HEIGHT).unwrap();
+
+        assert_eq!(game.tile.len(), BOARD_WIDTH);
+        assert!(game.tile.iter().all(|row| row.len() == BOARD_HEIGHT));
+        assert_eq!(game.tile[0][0].frag_letter, Some('a'));
+        assert_eq!(game.tile[24][24].frag_exp, 5_800);
+        assert_eq!(game.tile[24][24].rune_exp, 29_000);
     }
 }
