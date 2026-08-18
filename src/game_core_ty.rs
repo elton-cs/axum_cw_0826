@@ -6,8 +6,8 @@ pub const TREASURY_FEE: u32 = 9;
 pub const PROTOCOL_FEE: u32 = PUZZLE_PRICE - TREASURY_FEE;
 pub const FREE_GEM_GIFT: u32 = 1_000;
 pub const MAX_PUZZLE_ATTEMPTS: usize = 10;
-pub const BOARD_WIDTH: usize = 25;
-pub const BOARD_HEIGHT: usize = 25;
+pub const BOARD_WIDTH: usize = 9;
+pub const BOARD_HEIGHT: usize = 9;
 
 pub const PRIZE_OPTION: [u32; 3] = [5, 10, 25];
 pub const FRAG_GEM_REWARD_INTERVAL: u32 = 13;
