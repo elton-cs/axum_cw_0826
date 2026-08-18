@@ -14,13 +14,18 @@ use game_core_ty::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    path::Path,
+    io,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::watch};
 use tower_http::cors::CorsLayer;
 
 const GAME_STATE_PATH: &str = "game_state.json";
+const SNAPSHOT_DIRECTORY: &str = "snapshots";
+const SAVE_INTERVAL: Duration = Duration::from_secs(60);
+const SNAPSHOT_INTERVAL_MINUTES: u64 = 5;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -29,13 +34,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address = "127.0.0.1:3000";
     let listener = TcpListener::bind(address).await?;
     println!("Server running at http://{address}");
+
+    let (save_shutdown_tx, save_shutdown_rx) = watch::channel(false);
+    let save_task = tokio::spawn(periodically_save_game(state.clone(), save_shutdown_rx));
+
     axum::serve(listener, router(state.clone()))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
+    // Let an in-progress periodic save finish before writing the final state.
+    let _ = save_shutdown_tx.send(true);
+    save_task
+        .await
+        .map_err(|error| io::Error::other(format!("save task failed: {error}")))?;
+
     let game = state
         .lock()
-        .map_err(|_| std::io::Error::other("game state lock poisoned"))?;
+        .map_err(|_| io::Error::other("game state lock poisoned"))?;
     save_game(&game)?;
     println!("Game state saved to {GAME_STATE_PATH}");
     Ok(())
@@ -56,8 +71,78 @@ fn load_game() -> Result<Game, Box<dyn std::error::Error>> {
 }
 
 fn save_game(game: &Game) -> Result<(), Box<dyn std::error::Error>> {
-    std::fs::write(GAME_STATE_PATH, serde_json::to_vec_pretty(game)?)?;
+    let json = serde_json::to_vec_pretty(game)?;
+    write_atomically(Path::new(GAME_STATE_PATH), &json)?;
     Ok(())
+}
+
+async fn periodically_save_game(state: GameState, mut shutdown: watch::Receiver<bool>) {
+    let start = tokio::time::Instant::now() + SAVE_INTERVAL;
+    let mut interval = tokio::time::interval_at(start, SAVE_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut minutes_elapsed = 0;
+
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                minutes_elapsed += 1;
+                let create_snapshot = minutes_elapsed % SNAPSHOT_INTERVAL_MINUTES == 0;
+                if let Err(error) = persist_game(&state, create_snapshot).await {
+                    eprintln!("Failed to save game state: {error}");
+                }
+            }
+            result = shutdown.changed() => {
+                if result.is_err() || *shutdown.borrow() {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+async fn persist_game(state: &GameState, create_snapshot: bool) -> io::Result<()> {
+    // Serialize a consistent state while holding the lock, then release it before disk I/O.
+    let json = {
+        let game = state
+            .lock()
+            .map_err(|_| io::Error::other("game state lock poisoned"))?;
+        serde_json::to_vec_pretty(&*game).map_err(io::Error::other)?
+    };
+
+    tokio::task::spawn_blocking(move || {
+        write_atomically(Path::new(GAME_STATE_PATH), &json)?;
+
+        if create_snapshot {
+            let snapshot_path = snapshot_path()?;
+            write_atomically(&snapshot_path, &json)?;
+            println!("Game state snapshot saved to {}", snapshot_path.display());
+        }
+
+        Ok::<(), io::Error>(())
+    })
+    .await
+    .map_err(|error| io::Error::other(format!("save operation failed: {error}")))?
+}
+
+fn snapshot_path() -> io::Result<PathBuf> {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(io::Error::other)?
+        .as_secs();
+    Ok(Path::new(SNAPSHOT_DIRECTORY).join(format!("game_state_{timestamp}.json")))
+}
+
+fn write_atomically(path: &Path, json: &[u8]) -> io::Result<()> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let temporary_path = path.with_extension("json.tmp");
+    std::fs::write(&temporary_path, json)?;
+    std::fs::rename(temporary_path, path)
 }
 
 async fn shutdown_signal() {
@@ -87,6 +172,7 @@ async fn shutdown_signal() {
 pub fn router(state: GameState) -> Router {
     Router::new()
         .route("/game/create-player", post(create_player))
+        .route("/game/login", post(login))
         .route("/game/claim-free-gems", post(claim_free_gems))
         .route("/game/buy-puzzle", post(buy_puzzle))
         .route("/game/guess-puzzle", post(guess_puzzle))
@@ -151,6 +237,12 @@ struct PreviousPuzzleResponse {
     reward_frag: char,
     correct_word: String,
     attempt_word: [Option<Attempt>; MAX_PUZZLE_ATTEMPTS],
+}
+
+#[derive(Deserialize)]
+struct LoginRequest {
+    name: String,
+    pass: String,
 }
 
 #[derive(Deserialize)]
@@ -258,6 +350,11 @@ async fn create_player(
             pass: request.pass,
         },
     )
+}
+
+async fn login(State(state): State<GameState>, Json(request): Json<LoginRequest>) -> HandlerResult {
+    authenticate(&state, &request.name, &request.pass)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn claim_free_gems(

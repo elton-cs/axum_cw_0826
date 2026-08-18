@@ -508,7 +508,9 @@ mod tests {
         assert_eq!(game.tile.len(), BOARD_WIDTH);
         assert!(game.tile.iter().all(|row| row.len() == BOARD_HEIGHT));
         assert_eq!(game.tile[0][0].frag_letter, Some('a'));
-        assert_eq!(game.tile[24][24].frag_exp, 5_800);
-        assert_eq!(game.tile[24][24].rune_exp, 29_000);
+        let last_x = BOARD_WIDTH - 1;
+        let last_y = BOARD_HEIGHT - 1;
+        assert_eq!(game.tile[last_x][last_y].frag_exp, 2_600);
+        assert_eq!(game.tile[last_x][last_y].rune_exp, 13_000);
     }
 }
