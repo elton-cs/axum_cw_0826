@@ -5,7 +5,7 @@ use axum::{
     Router,
     extract::{Json, Query, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::{any, get, post},
 };
 use game_core_fn::{ensure_tile_dimensions, update_game};
 use game_core_ty::{
@@ -20,7 +20,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{net::TcpListener, sync::watch};
-use tower_http::cors::CorsLayer;
+use tower_http::{
+    cors::CorsLayer,
+    services::{ServeDir, ServeFile},
+};
 
 const GAME_STATE_PATH: &str = "game_state.json";
 const SNAPSHOT_DIRECTORY: &str = "snapshots";
@@ -31,8 +34,8 @@ const SNAPSHOT_INTERVAL_MINUTES: u64 = 5;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(Mutex::new(load_game()?));
 
-    let address = "127.0.0.1:3000";
-    let listener = TcpListener::bind(address).await?;
+    let address = std::env::var("ADDRESS").unwrap_or_else(|_| "127.0.0.1:3000".to_owned());
+    let listener = TcpListener::bind(&address).await?;
     println!("Server running at http://{address}");
 
     let (save_shutdown_tx, save_shutdown_rx) = watch::channel(false);
@@ -170,6 +173,10 @@ async fn shutdown_signal() {
 }
 
 pub fn router(state: GameState) -> Router {
+    let frontend_dir = frontend_directory();
+    let index_file = frontend_dir.join("index.html");
+    let frontend = ServeDir::new(frontend_dir).fallback(ServeFile::new(index_file));
+
     Router::new()
         .route("/game/create-player", post(create_player))
         .route("/game/login", post(login))
@@ -184,8 +191,22 @@ pub fn router(state: GameState) -> Router {
         .route("/game/tiles", get(get_tiles))
         .route("/game/stats", get(get_game_stats))
         .route("/game/user", get(get_user))
+        .route("/game/{*path}", any(api_not_found))
         .layer(CorsLayer::permissive())
+        // Unknown non-API paths fall back to index.html so browser refreshes
+        // work for every client-side route.
+        .fallback_service(frontend)
         .with_state(state)
+}
+
+async fn api_not_found() -> StatusCode {
+    StatusCode::NOT_FOUND
+}
+
+fn frontend_directory() -> PathBuf {
+    std::env::var_os("FRONTEND_DIST")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../tstack_cw_0826/dist"))
 }
 
 pub type GameState = Arc<Mutex<Game>>;
